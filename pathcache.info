@@ -1,0 +1,6 @@
+; $Id$
+name = Path Cache
+description = Perform path caching for better URL alias performance.
+dependencies[] = path
+package = Caching
+core = 6.x

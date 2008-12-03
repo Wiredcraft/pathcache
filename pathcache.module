@@ -1,0 +1,17 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Caches path lookups by providing alternate drupal_lookup_path().
+ */
+
+/**
+ * Implementation of hook_flush_caches().
+ */
+function pathcache_flush_caches() {
+  return array(
+    'cache_pathsrc',
+    'cache_pathdst',
+  );
+}
