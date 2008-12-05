@@ -34,7 +34,7 @@ function pathcache_install() {
 /**
  * Implementation of hook_uninstall().
  */
-function upload_uninstall() {
+function pathcache_uninstall() {
   // Remove tables.
   drupal_uninstall_schema('pathcache');
 }
