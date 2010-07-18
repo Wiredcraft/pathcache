@@ -1,11 +1,11 @@
 Index: includes/path.inc
 ===================================================================
 RCS file: /cvs/drupal/drupal/includes/path.inc,v
-retrieving revision 1.19.2.1
-diff -u -p -r1.19.2.1 path.inc
---- includes/path.inc	13 Oct 2008 21:06:41 -0000	1.19.2.1
-+++ includes/path.inc	6 Nov 2009 03:11:14 -0000
-@@ -46,10 +46,101 @@ function drupal_init_path() {
+retrieving revision 1.19.2.4
+diff -u -p -r1.19.2.4 path.inc
+--- includes/path.inc	28 May 2010 15:12:04 -0000	1.19.2.4
++++ includes/path.inc	18 Jul 2010 02:56:50 -0000
+@@ -46,10 +46,103 @@ function drupal_init_path() {
  function drupal_lookup_path($action, $path = '', $path_language = '') {
    global $language;
    // $map is an array with language keys, holding arrays of Drupal paths to alias relations
@@ -56,6 +56,7 @@ diff -u -p -r1.19.2.1 path.inc
 +      $cid = $path . $path_language;
 +      $cache = cache_get($cid, 'cache_pathdst');
 +      if ($cache) {
++        $map[$path_language][$path] = $cache->data;
 +        return $cache->data;
 +      }
 +      // Get the most fitting result falling back with alias without language.      
@@ -78,6 +79,7 @@ diff -u -p -r1.19.2.1 path.inc
 +        $cid = $path . $path_language;
 +        $cache = cache_get($cid, 'cache_pathsrc');
 +        if ($cache) {
++          $map[$path_language][$cache->data] = $path;
 +          return $cache->data;
 +        }
 +        
