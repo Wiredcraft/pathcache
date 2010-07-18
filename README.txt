@@ -55,7 +55,7 @@ ps aux | grep memc
 STEP FIVE: Apply the patch to includes/path.inc. At the command line:
 
 cd /path/to/your/drupal/root
-patch < sites/all/modules/pathcache/path.inc.patch
+patch -p0 < sites/all/modules/pathcache/path.inc.patch
 
 This adds caching to drupal_lookup_path() in path.inc.
 
