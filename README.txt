@@ -1,4 +1,3 @@
-// $Id$
 
 The Path Cache module stores paths in a cache so that Drupal does not have
 to look them up from the database.
