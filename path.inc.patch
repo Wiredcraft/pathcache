@@ -1,111 +1,147 @@
-Index: includes/path.inc
-===================================================================
-RCS file: /cvs/drupal/drupal/includes/path.inc,v
-retrieving revision 1.19.2.4
-diff -u -p -r1.19.2.4 path.inc
---- includes/path.inc	28 May 2010 15:12:04 -0000	1.19.2.4
-+++ includes/path.inc	18 Jul 2010 02:56:50 -0000
-@@ -46,10 +46,103 @@ function drupal_init_path() {
- function drupal_lookup_path($action, $path = '', $path_language = '') {
-   global $language;
-   // $map is an array with language keys, holding arrays of Drupal paths to alias relations
-+  /*
-   static $map = array(), $no_src = array(), $count;
-+  */
-+  static $map = array(), $no_src = array();
- 
-   $path_language = $path_language ? $path_language : $language->language;
- 
-+  // ************* Begin pathcache.module Path Caching Modifications **************
+diff --git includes/path.inc includes/path.inc
+index db60537..0ab085d 100644
+--- includes/path.inc
++++ includes/path.inc
+@@ -90,8 +90,47 @@ function drupal_lookup_path($action, $path = '', $path_language = NULL) {
+         $cache['map'][$path_language] = array();
+         // Load system paths from cache.
+         $cid = current_path();
+-        if ($cached = cache_get($cid, 'cache_path')) {
+-          $cache['system_paths'] = $cached->data;
 +
-+  // Drupal core checks to see if the url_alias table is empty on each request.
-+  // We assume that the table is nonempty, since it would be very silly to enable
-+  // the Path Cache module if you had no paths to cache. Thus, we have eliminated
-+  // the $count variable altogether.
-+  /* 
-+  
-+  // Use $count to avoid looking up paths in subsequent calls if there simply are no aliases
-+  if (!isset($count)) {
-+    $count = (int)db_result(db_query('SELECT pid FROM {url_alias} LIMIT 1'));
-+  }
-+  */
++        // Small hack to allow pre-filling of system paths cache via
++        // drupal_static(), you can set $cache['system_paths'] and
++        // $cache['first_call'] then get multiple lookups for any
++        // arbitrary set of system paths..
++        $cached = FALSE;
++        if (!empty($cache['system_paths']) || ($cached = cache_get($cid, 'cache_path'))) {
++          if ($cached) {
++            $cache['system_paths'] = $cached->data;
++          }
++          // End hack.
 +
-+  // A wipe is most commonly performed by path_set_alias() in path.module via 
-+  // drupal_clear_path_cache() in common.inc. The intent it to clear the static
-+  // variables $map and $no_src, but we can also use it as an indicator that
-+  // the path cache is dirty.
-+  if ($action == 'wipe') {
-+    $map = array();
-+    $no_src = array();
-+    // This will flush the entire cache_path cache.
-+    // Drastic, but if running with a memcached caching backend, wildcards
-+    // are not supported so the whole bin must be flushed.
-+    cache_clear_all('*', 'cache_pathdst', TRUE);
-+    cache_clear_all('*', 'cache_pathsrc', TRUE);
-+  }
-+  elseif ($path != '') {
-+    // When action is 'alias' we are given a Drupal path and are looking to
-+    // see if there is an alias for it.
-+    if ($action == 'alias') {
-+      // First check the static variable in case we've looked up this system path earlier
-+      // in this request.
-+      if (isset($map[$path_language][$path])) {
-+        return $map[$path_language][$path];
-+      }
-+      // Not in the static variable. Try cache.
-+      $cid = $path . $path_language;
-+      $cache = cache_get($cid, 'cache_pathdst');
-+      if ($cache) {
-+        $map[$path_language][$path] = $cache->data;
-+        return $cache->data;
-+      }
-+      // Get the most fitting result falling back with alias without language.      
-+      $alias = db_result(db_query("SELECT dst FROM {url_alias} WHERE src = '%s' AND language IN('%s', '') ORDER BY language DESC", $path, $path_language));
-+      // Store in static variable in case we encounter the same system path again
-+      // during this request.
-+      $map[$path_language][$path] = $alias;
-+      // Store in cache.
-+      cache_set($cid, $alias, 'cache_pathdst', time() + variable_get('pathcache_expire', 43200)); // 12 hours
-+      return $alias;
-+    }
-+    // When action is 'source' we are given a URL alias and need to return the
-+    // Drupal path.
-+    // Check $no_src for this $path in case we've already determined that there
-+    // isn't a path that has this alias.
-+    elseif ($action == 'source' && !isset($no_src[$path_language][$path])) {
-+      $src = '';
-+      // Look for the value $path within the cached $map.
-+      if (!isset($map[$path_language]) || !($src = array_search($path, $map[$path_language]))) {
-+        $cid = $path . $path_language;
-+        $cache = cache_get($cid, 'cache_pathsrc');
-+        if ($cache) {
-+          $map[$path_language][$cache->data] = $path;
-+          return $cache->data;
++          // Now fetch the aliases corresponding to these system paths.
++          // We order by ASC and overwrite array keys to ensure the correct
++          // alias is used when there are multiple aliases per path.
++
++          // First try to fetch the path aliaes from cache. By using
++          // cache_get_multiple() we allow caching backends which support it to
++          // fetch all cached paths in a single request. $cid needs to be built
++          // from both path language and path.
++          foreach ($cache['system_paths'] as $system_path) {
++            $system_cids[] = $path_language . ':' .  $system_path;
++            $system_paths[$system_path] = $system_path;
++          }
++          if ($cached_paths = cache_get_multiple($system_cids, 'cache_path_alias')) {
++            foreach ($cached_paths as $cached) {
++              $system_path = str_replace($path_language . ':', '', $cached->cid);
++              // Remove this path from the aliases to query against the
++              // database.
++              unset($system_paths[$system_path]);
++              if ($cached->data) {
++                $cache['map'][$path_language][$system_path] = $cached->data;
++              }
++              else {
++                $cache['no_aliases'][$path_language][$system_path] = $system_path;
++              }
++            }
++          }
 +        }
-+        
-+        // Get the most fitting result falling back with alias without language
-+        if ($src = db_result(db_query("SELECT src FROM {url_alias} WHERE dst = '%s' AND language IN('%s', '') ORDER BY language DESC", $path, $path_language))) {
-+          $map[$path_language][$src] = $path;
-+          cache_set($cid, $src, 'cache_pathsrc', time() + variable_get('pathcache_expire', 43200)); // 12 hours
++        // Fetch remaining paths from the database.
++        if (!empty($system_paths)) {
+           // Now fetch the aliases corresponding to these system paths.
+           $args = array(
+             ':system' => $cache['system_paths'],
+@@ -116,9 +155,20 @@ function drupal_lookup_path($action, $path = '', $path_language = NULL) {
+           else {
+             $result = db_query('SELECT source, alias FROM {url_alias} WHERE source IN (:system) AND language IN (:language, :language_none) ORDER BY language DESC, pid ASC', $args);
+           }
+-          $cache['map'][$path_language] = $result->fetchAllKeyed();
++          $new_paths = $result->fetchAllKeyed();
++          $cache['map'][$path_language] += $new_paths;
+           // Keep a record of paths with no alias to avoid querying twice.
+-          $cache['no_aliases'][$path_language] = array_flip(array_diff_key($cache['system_paths'], array_keys($cache['map'][$path_language])));
++          $new_misses = array_diff_key($cache['system_paths'], array_keys($cache['map'][$path_language]));
++          foreach ($new_misses as $new_miss) {
++            $path_cid = $path_language . ':' . $new_miss;
++            cache_set($path_cid, '', 'cache_path_alias');
++            $cache['no_aliases'][$path_language][$new_miss] = $new_miss;
++          }
++          // Cache the individual paths.
++          foreach ($new_paths as $new_path => $new_alias) {
++            $path_cid = $path_language . ':' . $new_path;
++            cache_set($path_cid, $new_alias, 'cache_path_alias');
++          }
+         }
+       }
+       // If the alias has already been loaded, return it.
+@@ -133,6 +183,12 @@ function drupal_lookup_path($action, $path = '', $path_language = NULL) {
+       }
+       // For system paths which were not cached, query aliases individually.
+       elseif (!isset($cache['no_aliases'][$path_language][$path])) {
++        $path_cid = $path_language . ':' . $path;
++        $cached = cache_get($path_cid, 'cache_path_alias');
++        if ($cached) {
++          $cache['map'][$path_language][$path] = $alias = $cached->data;
++          return $alias;
++        }
+         $args = array(
+           ':source' => $path,
+           ':language' => $path_language,
+@@ -150,6 +206,15 @@ function drupal_lookup_path($action, $path = '', $path_language = NULL) {
+           $alias = db_query("SELECT alias FROM {url_alias} WHERE source = :source AND language IN (:language, :language_none) ORDER BY language ASC, pid DESC", $args)->fetchField();
+         }
+         $cache['map'][$path_language][$path] = $alias;
++        if ($alias) {
++          cache_set($path_cid, $alias, 'cache_path_alias');
 +        }
 +        else {
-+          // We can't record anything into $map because we do not have a valid
-+          // index and there is no need because we have not learned anything
-+          // about any Drupal path. Thus cache to $no_src.
-+          // Setting this flag makes the array_search($path, $map[$path_language]) test
-+          // above false, and skips to return $src, below.
-+          $no_src[$path_language][$path] = TRUE;
-+          // We cache that the src is the same as the dst so we don't have to fail
-+          // the cache hit and do a pointless query.
-+          cache_set($cid, $path, 'cache_pathsrc', time() + variable_get('pathcache_expire', 43200)); // 12 hours
++          // When there is no alias, cache this fact as well, but only when
++          // the user is anonymous to avoid bloating the cache with paths
++          // like node/n/edit.
++          cache_set($path_cid, '', 'cache_path_alias');
 +        }
-+      }
-+      return $src;
-+    }
-+  }
+         return $alias;
+       }
+     }
+@@ -159,6 +224,17 @@ function drupal_lookup_path($action, $path = '', $path_language = NULL) {
+       // Look for the value $path within the cached $map
+       $source = FALSE;
+       if (!isset($cache['map'][$path_language]) || !($source = array_search($path, $cache['map'][$path_language]))) {
++        $path_cid = $path_language . ':' . $path;
 +
-+  return FALSE;  
-+  // ************** End pathcache.module Path Caching Modifications ***************  
-   // Use $count to avoid looking up paths in subsequent calls if there simply are no aliases
-   if (!isset($count)) {
-     $count = db_result(db_query('SELECT COUNT(pid) FROM {url_alias}'));
++        if ($cached = cache_get($path_cid, 'cache_path_source')) {
++          if (!empty($cached->data)) {
++            $cache['map'][$path_language][$source] = $source =  $cached->data;
++          }
++          else {
++            $cache['no_source'][$path_language][$path] = TRUE;
++          }
++          return $source;
++        }
+         $args = array(
+           ':alias' => $path,
+           ':language' => $path_language,
+@@ -177,12 +253,22 @@ function drupal_lookup_path($action, $path = '', $path_language = NULL) {
+         }
+         if ($source = $result->fetchField()) {
+           $cache['map'][$path_language][$source] = $path;
++          cache_set($path_cid, $source, 'cache_path_source');
+         }
+         else {
+           // We can't record anything into $map because we do not have a valid
+           // index and there is no need because we have not learned anything
+           // about any Drupal path. Thus cache to $no_source.
+           $cache['no_source'][$path_language][$path] = TRUE;
++          // Add a cache entry with an empty string - this saves hitting the
++          // db for zero results. We can afford to do this because the
++          // whitelist will prevent attempts to cache paths like comment/$cid.
++          // And because memcache operates an LRU cache. However, only do this
++          // for anonymous users to avoid bloating the cache with paths like
++          // node/n/edit.
++          if ($GLOBALS['user']->uid) {
++            cache_set($path_cid, '', 'cache_path_source');
++          }
+         }
+       }
+       return $source;
